@@ -18,6 +18,7 @@ const DAY_NAMES = ['主日', '一', '二', '三', '四', '五', '六'];
 
 // CORS 代理列表 (依序嘗試)
 const CORS_PROXIES = [
+  (url, bookId, msgNum) => `data/${bookId}_${msgNum}.html`,
   url => `/api/proxy?url=${encodeURIComponent(url)}`,
   url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -260,7 +261,7 @@ async function fetchLifeStudyHtml(bookId, msgNum) {
   let lastError = null;
 
   for (const proxyBuilder of CORS_PROXIES) {
-    const proxyUrl = proxyBuilder(targetUrl);
+    const proxyUrl = proxyBuilder(targetUrl, bookId, parseInt(msgNum, 10));
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
