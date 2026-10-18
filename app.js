@@ -103,6 +103,11 @@ function initBookSelector() {
 
   select.addEventListener('change', e => {
     appState.settings.bookId = parseInt(e.target.value, 10);
+    appState.settings.msg1 = 1;
+    appState.settings.msg2 = 2;
+    clampChapters();
+    document.getElementById('msg1Input').value = appState.settings.msg1;
+    document.getElementById('msg2Input').value = appState.settings.msg2;
     saveCurrentSettings();
   });
 }
@@ -179,6 +184,7 @@ function updateCalculatedStartDate() {
 
 // 更新表單顯示值
 function renderFormValues() {
+  clampChapters();
   document.getElementById('bookSelect').value = appState.settings.bookId;
   document.getElementById('msg1Input').value = appState.settings.msg1;
   document.getElementById('msg2Input').value = appState.settings.msg2;
@@ -189,7 +195,7 @@ function renderFormValues() {
   const dateInput = document.getElementById('startDateInput');
   if (dateInput) {
     dateInput.value = appState.settings.startDate;
-    dateInput.addEventListener('change', e => {
+    dateInput.onchange = e => {
       if (!e.target.value) return;
       const aligned = alignToStartDay(e.target.value, appState.settings.startDayOfWeek);
       const adjusted = aligned !== e.target.value;
@@ -197,41 +203,68 @@ function renderFormValues() {
       e.target.value = aligned;
       if (adjusted) showToast(`已調整為當週第一篇起始日 (${DAY_NAMES[appState.settings.startDayOfWeek]}) ${aligned}`);
       saveCurrentSettings();
-    });
+    };
   }
 
   // 篇數聯動（變動 msg1 時，msg2 自動為 msg1 + 1）
   const msg1Input = document.getElementById('msg1Input');
   const msg2Input = document.getElementById('msg2Input');
   
-  msg1Input.addEventListener('input', e => {
+  msg1Input.oninput = e => {
     const val = parseInt(e.target.value, 10);
     if (!isNaN(val)) {
       appState.settings.msg1 = val;
       appState.settings.msg2 = val + 1;
-      msg2Input.value = val + 1;
+      clampChapters();
+      e.target.value = appState.settings.msg1;
+      msg2Input.value = appState.settings.msg2;
       saveCurrentSettings();
     }
-  });
+  };
 
-  msg2Input.addEventListener('input', e => {
+  msg2Input.oninput = e => {
     const val = parseInt(e.target.value, 10);
     if (!isNaN(val)) {
       appState.settings.msg2 = val;
+      clampChapters();
+      e.target.value = appState.settings.msg2;
       saveCurrentSettings();
     }
-  });
+  };
 
-  document.getElementById('headerTextInput').addEventListener('input', e => {
+  document.getElementById('headerTextInput').oninput = e => {
     appState.settings.headerText = e.target.value;
     saveCurrentSettings();
+  };
+}
+
+// 取得目前書卷總篇數
+function getCurrentBook() {
+  return BIBLE_BOOKS.find(b => b.id === appState.settings.bookId) || BIBLE_BOOKS[0];
+}
+
+// 篇數限制在 1 ~ 該卷總篇數，並同步輸入框上限
+function clampChapters() {
+  const total = getCurrentBook().chapters;
+  const s = appState.settings;
+  s.msg1 = Math.min(Math.max(s.msg1 || 1, 1), total);
+  s.msg2 = Math.min(Math.max(s.msg2 || 1, 1), total);
+  ['msg1Input', 'msg2Input'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.max = total;
   });
 }
 
 // 快速按鈕：前進到下週（篇數+2，日期+7天）
 function advanceToNextWeek() {
+  const total = getCurrentBook().chapters;
+  if (appState.settings.msg1 >= total) {
+    showToast(`已是${getCurrentBook().name}最後一篇`);
+    return;
+  }
   appState.settings.msg1 += 2;
   appState.settings.msg2 += 2;
+  clampChapters();
 
   if (appState.settings.startDate) {
     const [y, m, d] = appState.settings.startDate.split('-').map(Number);
@@ -343,7 +376,7 @@ function parseAndSplitMessage(html, bookId, msgNum) {
   const baseUrl = getLifeStudyUrl(bookId, msgNum);
 
   // 如果有小綱目標題
-  if (headings.length >= 2) {
+  if (headings.length >= 3) {
     // 收集開頭引言 (在第一個 O 之前的所有段落)
     let introLen = 0;
     let curr = headings[0].previousElementSibling;
@@ -418,23 +451,39 @@ function parseAndSplitMessage(html, bookId, msgNum) {
     };
   }
 
-  // 備援模式：若網頁無 O1/O2 標題，按段落切分
-  const paragraphs = Array.from(versesDiv.querySelectorAll('p.calibre2, p'));
-  const totalP = paragraphs.length;
-  const p1Idx = Math.max(1, Math.floor(totalP / 3));
-  const p2Idx = Math.max(p1Idx + 1, Math.floor((totalP * 2) / 3));
+  // 備援模式：無綱目時，按字數三等分，切在段落開頭
+  const paragraphs = Array.from(versesDiv.querySelectorAll('p')).filter(p => p.textContent.trim().length > 0);
+  const lens = paragraphs.map(p => p.textContent.trim().length);
+  const total = lens.reduce((a, b) => a + b, 0);
+  const startsOf = [];
+  let acc = 0;
+  lens.forEach(l => { startsOf.push(acc); acc += l; });
 
-  const p1Preview = paragraphs[p1Idx] ? paragraphs[p1Idx].textContent.slice(0, 15) : '第二段';
-  const p2Preview = paragraphs[p2Idx] ? paragraphs[p2Idx].textContent.slice(0, 15) : '第三段';
+  const pickCut = (ratio, minIdx) => {
+    let best = minIdx;
+    let bestDiff = Infinity;
+    for (let i = minIdx; i < paragraphs.length; i++) {
+      const diff = Math.abs(startsOf[i] - total * ratio);
+      if (diff < bestDiff) { bestDiff = diff; best = i; }
+    }
+    return best;
+  };
+  const cut1 = pickCut(1 / 3, Math.min(1, paragraphs.length - 1));
+  const cut2 = pickCut(2 / 3, Math.min(cut1 + 1, paragraphs.length - 1));
+  const hint = idx => {
+    const t = paragraphs[idx] ? paragraphs[idx].textContent.replace(/\s+/g, '').slice(0, 20) : '';
+    return t;
+  };
 
   return {
     title,
     cleanTitleOnly,
     baseUrl,
+    noOutline: true,
     parts: [
-      { startUrl: baseUrl, rangeText: `到「${p1Preview}...」前` },
-      { startUrl: baseUrl, rangeText: `到「${p2Preview}...」前` },
-      { startUrl: baseUrl, rangeText: `到結束` }
+      { startUrl: baseUrl, rangeText: `到「${hint(cut1)}」前` },
+      { startUrl: baseUrl, rangeText: `從「${hint(cut1)}」到「${hint(cut2)}」前` },
+      { startUrl: baseUrl, rangeText: `從「${hint(cut2)}」到結束` }
     ]
   };
 }
@@ -488,7 +537,7 @@ async function generateSchedule() {
         scheduleDays.push({
           isRestDay: true,
           dateStr: `${month}/${day} (${dayName})`,
-          text: `${month}/${day} (${dayName}) 【今日無共同追求 / 休息日 🌱】`
+          text: `${month}/${day} (${dayName}) 【無共追：本日無推送，在聚會中彼此供應，分享基督 🌱】`
         });
         continue;
       }
@@ -537,6 +586,7 @@ async function generateSchedule() {
       book,
       msg1,
       msg2,
+      noOutlineMsgs: [parsedMsg1.noOutline && msg1, parsedMsg2.noOutline && msg2].filter(Boolean),
       days: scheduleDays
     };
 
@@ -581,6 +631,7 @@ function renderScheduleUI() {
       <div class="result-summary">
         <h3>📖 ${book.name} 第 ${msg1} 篇、第 ${msg2} 篇追求進度</h3>
         <p class="subtitle">共 6 天追求，各段均分文字量與綱要節點</p>
+        ${appState.currentSchedule.noOutlineMsgs.length ? `<p class="subtitle">※ 第 ${appState.currentSchedule.noOutlineMsgs.join('、')} 篇無綱目，已按字數均分，可自行微調</p>` : ''}
       </div>
       <button class="btn-primary btn-copy-all" onclick="copyFullSchedule()">
         📋 一鍵複製 6 天完整內容
@@ -594,9 +645,9 @@ function renderScheduleUI() {
     if (day.isRestDay) {
       html += `
         <div class="day-card rest-day">
-          <div class="rest-badge">☕ 休息日</div>
+          <div class="rest-badge">無共追</div>
           <div class="day-date">${day.dateStr}</div>
-          <div class="rest-text">本日無推送，專心家庭或禱告聚會</div>
+          <div class="rest-text">本日無推送，在聚會中彼此供應，分享基督</div>
         </div>
       `;
       return;
