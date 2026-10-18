@@ -236,6 +236,54 @@ function renderFormValues() {
     appState.settings.headerText = e.target.value;
     saveCurrentSettings();
   };
+
+  const keyInput = document.getElementById('reurlKeyInput');
+  keyInput.value = appState.settings.reurlKey || '';
+  keyInput.oninput = e => {
+    appState.settings.reurlKey = e.target.value.trim();
+    saveCurrentSettings();
+  };
+}
+
+// 以 reurl.cc 縮短網址；失敗或無金鑰時回傳原網址
+async function shortenUrl(longUrl) {
+  const key = appState.settings.reurlKey;
+  if (!key) return longUrl;
+  const cacheKey = `reurl_${longUrl}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return cached;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch('https://api.reurl.cc/shorten', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'reurl-api-key': key },
+      body: JSON.stringify({ url: longUrl })
+    });
+    clearTimeout(timeoutId);
+    const data = await res.json();
+    if (data && data.short_url) {
+      localStorage.setItem(cacheKey, data.short_url);
+      return data.short_url;
+    }
+  } catch (e) {
+    console.warn('縮網址失敗，改用完整連結:', e);
+  }
+  return longUrl;
+}
+
+// 取得「文字片段」連結：取段落開頭約 10 字，若頁面內重複則往後延伸
+function buildTextFragmentUrl(baseUrl, paraText, pageText) {
+  const clean = paraText.replace(/\s+/g, '');
+  let len = Math.min(10, clean.length);
+  let snippet = clean.slice(0, len);
+  while (len < clean.length && pageText.split(snippet).length > 2) {
+    len++;
+    snippet = clean.slice(0, len);
+  }
+  const enc = encodeURIComponent(snippet).replace(/-/g, '%2D');
+  return { snippet: clean.slice(0, 10), url: `${baseUrl}#:~:text=${enc}` };
 }
 
 // 取得目前書卷總篇數
@@ -243,27 +291,29 @@ function getCurrentBook() {
   return BIBLE_BOOKS.find(b => b.id === appState.settings.bookId) || BIBLE_BOOKS[0];
 }
 
-// 篇數限制在 1 ~ 該卷總篇數，並同步輸入框上限
+// 篇數限制：第一篇 1 ~ 總篇數；第二篇最多為總篇數+1（超過總篇數代表本週不排第二篇）
 function clampChapters() {
   const total = getCurrentBook().chapters;
   const s = appState.settings;
   s.msg1 = Math.min(Math.max(s.msg1 || 1, 1), total);
-  s.msg2 = Math.min(Math.max(s.msg2 || 1, 1), total);
-  ['msg1Input', 'msg2Input'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.max = total;
-  });
+  s.msg2 = Math.min(Math.max(s.msg2 || 1, 1), total + 1);
+  const el1 = document.getElementById('msg1Input');
+  const el2 = document.getElementById('msg2Input');
+  if (el1) el1.max = total;
+  if (el2) el2.max = total + 1;
+  const note = document.getElementById('msg2Note');
+  if (note) note.textContent = s.msg2 > total ? `已超過${getCurrentBook().name}總篇數 (${total})，本週不排第二篇` : '';
 }
 
 // 快速按鈕：前進到下週（篇數+2，日期+7天）
 function advanceToNextWeek() {
   const total = getCurrentBook().chapters;
-  if (appState.settings.msg1 >= total) {
-    showToast(`已是${getCurrentBook().name}最後一篇`);
+  if (appState.settings.msg1 + 2 > total) {
+    showToast(`已是${getCurrentBook().name}最後一週`);
     return;
   }
   appState.settings.msg1 += 2;
-  appState.settings.msg2 += 2;
+  appState.settings.msg2 = appState.settings.msg1 + 1;
   clampChapters();
 
   if (appState.settings.startDate) {
@@ -285,7 +335,7 @@ function advanceToNextWeek() {
 function rewindToPreviousWeek() {
   if (appState.settings.msg1 > 2) {
     appState.settings.msg1 -= 2;
-    appState.settings.msg2 -= 2;
+    appState.settings.msg2 = appState.settings.msg1 + 1;
   }
 
   if (appState.settings.startDate) {
@@ -470,10 +520,9 @@ function parseAndSplitMessage(html, bookId, msgNum) {
   };
   const cut1 = pickCut(1 / 3, Math.min(1, paragraphs.length - 1));
   const cut2 = pickCut(2 / 3, Math.min(cut1 + 1, paragraphs.length - 1));
-  const hint = idx => {
-    const t = paragraphs[idx] ? paragraphs[idx].textContent.replace(/\s+/g, '').slice(0, 20) : '';
-    return t;
-  };
+  const hint = idx => (paragraphs[idx] ? paragraphs[idx].textContent.replace(/\s+/g, '').slice(0, 10) : '');
+  const frag = idx => buildTextFragmentUrl(baseUrl, paragraphs[idx].textContent, pageText).url;
+  const pageText = versesDiv.textContent.replace(/\s+/g, '');
 
   return {
     title,
@@ -482,8 +531,8 @@ function parseAndSplitMessage(html, bookId, msgNum) {
     noOutline: true,
     parts: [
       { startUrl: baseUrl, rangeText: `到「${hint(cut1)}」前` },
-      { startUrl: baseUrl, rangeText: `從「${hint(cut1)}」到「${hint(cut2)}」前` },
-      { startUrl: baseUrl, rangeText: `從「${hint(cut2)}」到結束` }
+      { startUrl: frag(cut1), rangeText: `從「${hint(cut1)}」到「${hint(cut2)}」前` },
+      { startUrl: frag(cut2), rangeText: `從「${hint(cut2)}」到結束` }
     ]
   };
 }
@@ -503,17 +552,19 @@ async function generateSchedule() {
 
     const book = BIBLE_BOOKS.find(b => b.id === appState.settings.bookId) || BIBLE_BOOKS[50];
     const { msg1, msg2, startDate, restDayOfWeek, headerText } = appState.settings;
+    const hasMsg2 = msg2 <= book.chapters;
+    const maxReadingDays = hasMsg2 ? 6 : 3;
 
-    // 平行抓取兩篇信息
+    // 平行抓取（第二篇超過總篇數則不抓）
     const [html1, html2] = await Promise.all([
       fetchLifeStudyHtml(book.id, msg1),
-      fetchLifeStudyHtml(book.id, msg2)
+      hasMsg2 ? fetchLifeStudyHtml(book.id, msg2) : Promise.resolve(null)
     ]);
 
     statusEl.innerHTML = `<span class="loading-spinner"></span> 正在排定日程與錨點格式...`;
 
     const parsedMsg1 = parseAndSplitMessage(html1, book.id, msg1);
-    const parsedMsg2 = parseAndSplitMessage(html2, book.id, msg2);
+    const parsedMsg2 = hasMsg2 ? parseAndSplitMessage(html2, book.id, msg2) : null;
 
     // 計算 7 天內的 6 個追求日 + 1 休息日
     const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
@@ -548,7 +599,7 @@ async function generateSchedule() {
         currentMsg = parsedMsg1;
         partData = parsedMsg1.parts[readingDayCount];
         msgNum = msg1;
-      } else if (readingDayCount < 6) {
+      } else if (readingDayCount < maxReadingDays) {
         currentMsg = parsedMsg2;
         partData = parsedMsg2.parts[readingDayCount - 3];
         msgNum = msg2;
@@ -577,22 +628,33 @@ async function generateSchedule() {
       });
 
       readingDayCount++;
-      if (readingDayCount >= 6) {
+      if (readingDayCount >= maxReadingDays) {
         break;
       }
     }
+
+    // 文字片段連結縮短（失敗則保留完整連結）
+    await Promise.all(scheduleDays.filter(d => !d.isRestDay && d.url.includes('#:~:text=')).map(async d => {
+      const short = await shortenUrl(d.url);
+      if (short !== d.url) {
+        d.formattedText = d.formattedText.replace(d.url, short);
+        d.url = short;
+      }
+    }));
 
     appState.currentSchedule = {
       book,
       msg1,
       msg2,
-      noOutlineMsgs: [parsedMsg1.noOutline && msg1, parsedMsg2.noOutline && msg2].filter(Boolean),
+      hasMsg2,
+      dayCount: maxReadingDays,
+      noOutlineMsgs: [parsedMsg1.noOutline && msg1, parsedMsg2 && parsedMsg2.noOutline && msg2].filter(Boolean),
       days: scheduleDays
     };
 
     renderScheduleUI();
 
-    statusEl.innerHTML = `✅ 已成功產生 6 天讀經進度！可直接一鍵複製。`;
+    statusEl.innerHTML = `✅ 已成功產生 ${maxReadingDays} 天讀經進度！可直接一鍵複製。`;
     statusEl.className = 'status-msg success';
   } catch (err) {
     console.error(err);
@@ -615,6 +677,7 @@ function buildFullScheduleText() {
   const part2Days = readingDays.slice(3, 6);
 
   const block1 = part1Days.map(d => d.formattedText).join('\n\n');
+  if (!part2Days.length) return block1;
   const block2 = part2Days.map(d => d.formattedText).join('\n\n');
 
   return `${block1}\n\n/*----------------------------*/\n${block2}`;
@@ -625,16 +688,16 @@ function renderScheduleUI() {
   const container = document.getElementById('resultContainer');
   if (!container || !appState.currentSchedule) return;
 
-  const { book, msg1, msg2, days } = appState.currentSchedule;
+  const { book, msg1, msg2, hasMsg2, dayCount, days } = appState.currentSchedule;
   let html = `
     <div class="result-header">
       <div class="result-summary">
-        <h3>📖 ${book.name} 第 ${msg1} 篇、第 ${msg2} 篇追求進度</h3>
-        <p class="subtitle">共 6 天追求，各段均分文字量與綱要節點</p>
+        <h3>📖 ${book.name} ${hasMsg2 ? `第 ${msg1} 篇、第 ${msg2} 篇` : `第 ${msg1} 篇`}追求進度</h3>
+        <p class="subtitle">共 ${dayCount} 天追求，各段均分文字量與綱要節點</p>
         ${appState.currentSchedule.noOutlineMsgs.length ? `<p class="subtitle">※ 第 ${appState.currentSchedule.noOutlineMsgs.join('、')} 篇無綱目，已按字數均分，可自行微調</p>` : ''}
       </div>
       <button class="btn-primary btn-copy-all" onclick="copyFullSchedule()">
-        📋 一鍵複製 6 天完整內容
+        📋 一鍵複製 ${dayCount} 天完整內容
       </button>
     </div>
     <div class="cards-list">
@@ -655,7 +718,7 @@ function renderScheduleUI() {
 
     readingCount++;
     // 在第 3 天閱讀完後插入明顯分隔標記
-    const isDividerNext = readingCount === 3;
+    const isDividerNext = readingCount === 3 && hasMsg2;
 
     html += `
       <div class="day-card">
@@ -685,11 +748,11 @@ function renderScheduleUI() {
 
   html += `
     </div>
-    <div class="result-footer">
+    ${msg1 + 2 <= book.chapters ? `<div class="result-footer">
       <button class="btn-secondary" onclick="advanceToNextWeek(); generateSchedule();">
         ⏭️ 直接切換並產生下週進度 (+2篇)
       </button>
-    </div>
+    </div>` : ''}
   `;
 
   container.innerHTML = html;
@@ -706,7 +769,7 @@ async function copyFullSchedule() {
 
   try {
     await navigator.clipboard.writeText(text);
-    showToast('🎉 已成功複製 6 天完整內容！可直接至 LINE 貼上');
+    showToast('🎉 已成功複製完整內容！可直接至 LINE 貼上');
   } catch (err) {
     // 降級方式
     fallbackCopyText(text);

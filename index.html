@@ -60,8 +60,8 @@
               <span class="prefix">ch</span>
               <input type="number" id="msg2Input" class="form-control" min="1" max="200" value="27">
             </div>
+            <small class="help-text" id="msg2Note"></small>
           </div>
-        </div>
       </section>
 
       <!-- 排程週期設定卡片 (彈性休息日) -->
@@ -98,6 +98,11 @@
           <div class="form-group">
             <label for="headerTextInput">發文第一行抬頭文字</label>
             <input type="text" id="headerTextInput" class="form-control" value="【 天天21:00生命讀經 🌱 】">
+          </div>
+          <div class="form-group">
+            <label for="reurlKeyInput">reurl.cc API 金鑰 (縮短連結用)</label>
+            <input type="password" id="reurlKeyInput" class="form-control" autocomplete="off" placeholder="貼上金鑰；不填則使用完整連結">
+            <small class="help-text">金鑰只存在這台裝置的瀏覽器，不會上傳。</small>
           </div>
         </div>
       </details>
