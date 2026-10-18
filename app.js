@@ -54,6 +54,9 @@ function loadSavedSettings() {
     if (saved) {
       const parsed = JSON.parse(saved);
       appState.settings = { ...DEFAULT_SETTINGS, ...parsed };
+      const mergedBooks = { 10: 9, 12: 11, 14: 13 };
+      if (mergedBooks[appState.settings.bookId]) appState.settings.bookId = mergedBooks[appState.settings.bookId];
+      if (appState.settings.restDayOfWeek === -1) appState.settings.restDayOfWeek = DEFAULT_SETTINGS.restDayOfWeek;
     }
   } catch (e) {
     console.error('載入設定失敗:', e);
@@ -85,7 +88,7 @@ function initBookSelector() {
   BIBLE_BOOKS.forEach(b => {
     const opt = document.createElement('option');
     opt.value = b.id;
-    opt.textContent = `${b.name} (${b.abbr}) - 全 ${b.chapters} 篇`;
+    opt.textContent = `${b.name}・${b.chapters}篇`;
     if (b.testament === 'OT') {
       otGroup.appendChild(opt);
     } else {
@@ -93,8 +96,8 @@ function initBookSelector() {
     }
   });
 
-  select.appendChild(ntGroup);
   select.appendChild(otGroup);
+  select.appendChild(ntGroup);
 
   select.value = appState.settings.bookId;
 
@@ -115,14 +118,17 @@ function initScheduleControls() {
   ).join('');
 
   // 休息日
-  restDaySel.innerHTML = `
-    <option value="-1">無休息日 (連續推送)</option>
-    ${DAY_NAMES.map((name, i) => `<option value="${i}">每週 (${name}) 休息不推</option>`).join('')}
-  `;
+  restDaySel.innerHTML = DAY_NAMES.map((name, i) => `<option value="${i}">每週 (${name}) 無共追</option>`).join('');
 
   startDaySel.addEventListener('change', e => {
     appState.settings.startDayOfWeek = parseInt(e.target.value, 10);
-    updateCalculatedStartDate();
+    if (appState.settings.startDate) {
+      appState.settings.startDate = alignToStartDay(appState.settings.startDate, appState.settings.startDayOfWeek);
+      const di = document.getElementById('startDateInput');
+      if (di) di.value = appState.settings.startDate;
+    } else {
+      updateCalculatedStartDate();
+    }
     saveCurrentSettings();
   });
 
@@ -132,10 +138,20 @@ function initScheduleControls() {
   });
 }
 
-// 初始化起始日期（預設為最近的「起始星期」）
+// 將日期往後對齊到「起始星期」，回傳 yyyy-mm-dd
+function alignToStartDay(dateStr, targetDay) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + ((targetDay - date.getDay() + 7) % 7));
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// 初始化起始日期（預設為最近的「起始星期」，既有日期則對齊）
 function initDateDefault() {
   if (!appState.settings.startDate) {
     updateCalculatedStartDate();
+  } else {
+    appState.settings.startDate = alignToStartDay(appState.settings.startDate, appState.settings.startDayOfWeek);
   }
 }
 
@@ -174,7 +190,12 @@ function renderFormValues() {
   if (dateInput) {
     dateInput.value = appState.settings.startDate;
     dateInput.addEventListener('change', e => {
-      appState.settings.startDate = e.target.value;
+      if (!e.target.value) return;
+      const aligned = alignToStartDay(e.target.value, appState.settings.startDayOfWeek);
+      const adjusted = aligned !== e.target.value;
+      appState.settings.startDate = aligned;
+      e.target.value = aligned;
+      if (adjusted) showToast(`已調整為當週第一篇起始日 (${DAY_NAMES[appState.settings.startDayOfWeek]}) ${aligned}`);
       saveCurrentSettings();
     });
   }

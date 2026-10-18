@@ -67,18 +67,18 @@
       <!-- 排程週期設定卡片 (彈性休息日) -->
       <section class="card config-card">
         <div class="card-header">
-          <h2>📅 週週期與休息日設定</h2>
+          <h2>📅 週期與無共追日設定</h2>
         </div>
 
         <div class="form-grid">
           <div class="form-group">
-            <label for="startDaySelect">週期起始星期</label>
+            <label for="startDaySelect">當週第一篇起始星期</label>
             <select id="startDaySelect" class="form-control"></select>
             <small class="help-text">六天追求的第一天</small>
           </div>
 
           <div class="form-group">
-            <label for="restDaySelect">每週休息日 (不推送)</label>
+            <label for="restDaySelect">每週小排無共追日 (不發提醒)</label>
             <select id="restDaySelect" class="form-control"></select>
             <small class="help-text">可落在中間(如週三小排)或最後(如週二)</small>
           </div>
@@ -86,7 +86,7 @@
           <div class="form-group full-width">
             <label for="startDateInput">本次排程起始日期</label>
             <input type="date" id="startDateInput" class="form-control">
-            <small class="help-text">系統會自動依起始星期計算，亦可手動指定</small>
+            <small class="help-text">系統會自動依起始星期計算；若選的日期不是起始星期，會自動往後對齊</small>
           </div>
         </div>
       </section>
