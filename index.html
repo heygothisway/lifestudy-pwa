@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>生命讀經追求排程器 🌱</title>
+  
+  <!-- PWA 元標籤 -->
+  <meta name="theme-color" content="#2e7d32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="生命讀經排程">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- 頂部標題列 -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">🌱</span>
+        <div>
+          <h1>生命讀經追求排程器</h1>
+          <p class="brand-sub">每週自動均分六天・智慧綱要錨點・一鍵複製</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <!-- 書卷與篇數設定卡片 -->
+      <section class="card config-card">
+        <div class="card-header">
+          <h2>📖 書卷與篇數選擇</h2>
+          <div class="week-nav-buttons">
+            <button type="button" class="btn-icon" onclick="rewindToPreviousWeek()" title="上一週 (-2篇)">◀ 上週</button>
+            <button type="button" class="btn-icon" onclick="advanceToNextWeek()" title="下一週 (+2篇)">下週 ▶</button>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label for="bookSelect">選擇書卷</label>
+            <select id="bookSelect" class="form-control"></select>
+          </div>
+
+          <div class="form-group">
+            <label for="msg1Input">第一篇 (篇數)</label>
+            <div class="input-with-prefix">
+              <span class="prefix">ch</span>
+              <input type="number" id="msg1Input" class="form-control" min="1" max="200" value="26">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="msg2Input">第二篇 (篇數)</label>
+            <div class="input-with-prefix">
+              <span class="prefix">ch</span>
+              <input type="number" id="msg2Input" class="form-control" min="1" max="200" value="27">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 排程週期設定卡片 (彈性休息日) -->
+      <section class="card config-card">
+        <div class="card-header">
+          <h2>📅 週週期與休息日設定</h2>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="startDaySelect">週期起始星期</label>
+            <select id="startDaySelect" class="form-control"></select>
+            <small class="help-text">六天追求的第一天</small>
+          </div>
+
+          <div class="form-group">
+            <label for="restDaySelect">每週休息日 (不推送)</label>
+            <select id="restDaySelect" class="form-control"></select>
+            <small class="help-text">可落在中間(如週三小排)或最後(如週二)</small>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="startDateInput">本次排程起始日期</label>
+            <input type="date" id="startDateInput" class="form-control">
+            <small class="help-text">系統會自動依起始星期計算，亦可手動指定</small>
+          </div>
+        </div>
+      </section>
+
+      <!-- 進階格式自訂 (折疊) -->
+      <details class="card details-card">
+        <summary class="details-summary">⚙️ 自訂群組發文抬頭</summary>
+        <div class="details-content">
+          <div class="form-group">
+            <label for="headerTextInput">發文第一行抬頭文字</label>
+            <input type="text" id="headerTextInput" class="form-control" value="【 天天21:00生命讀經 🌱 】">
+          </div>
+        </div>
+      </details>
+
+      <!-- 操作按鈕區 -->
+      <div class="action-bar">
+        <button id="btnGenerate" class="btn-generate" onclick="generateSchedule()">
+          <span class="btn-icon">⚡</span> 產生本週 6 天排程
+        </button>
+      </div>
+
+      <!-- 狀態提示 -->
+      <div id="statusMessage" class="status-msg" style="display: none;"></div>
+
+      <!-- 排程結果預覽區 -->
+      <div id="resultContainer" class="result-container" style="display: none;"></div>
+    </main>
+
+    <footer class="app-footer">
+      <p>生命讀經資料來源：<a href="https://line.twgbr.org/life-study/" target="_blank" rel="noopener">臺灣福音書房線上閱讀</a></p>
+      <p class="copyright">願主的話豐豐富富的住在你們裡面 🌱</p>
+    </footer>
+  </div>
+
+  <!-- 引用腳本 -->
+  <script src="books.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
