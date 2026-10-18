@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lifestudy-pwa-v6';
+const CACHE_NAME = 'lifestudy-pwa-v7';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -36,16 +36,32 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  const requestUrl = new URL(event.request.url);
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const requestUrl = new URL(req.url);
 
-  // 若為 proxy 或外部請求，直接聯網
-  if (requestUrl.pathname.startsWith('/api/') || !requestUrl.origin.includes(self.location.origin)) {
+  // 外部請求直接聯網
+  if (requestUrl.origin !== self.location.origin) return;
+
+  // 頁面導覽：優先連網，失敗時用快取的首頁
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req).catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
+    );
     return;
   }
 
+  // 其他資源：優先快取，沒有則連網並存入快取
   event.respondWith(
-    caches.match(event.request).then(response => {
-      return response || fetch(event.request);
+    caches.match(req).then(response => {
+      if (response) return response;
+      return fetch(req).then(res => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(req, copy));
+        }
+        return res;
+      });
     })
   );
 });
